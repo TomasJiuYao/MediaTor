@@ -1,8 +1,10 @@
 /*
  * V4L2 capture -> RKMPP H264/H265 encode -> file + RTSP stream
  *
- * Capture NV12 1920x1080 from V4L2 device via MMAP,
- * feed into h264_rkmpp/h265_rkmpp encoder, write to file and/or push RTSP.
+ * Pipeline architecture with epoll-based V4L2 capture:
+ *   V4L2CaptureNode --[Frame]--> FFmpegEncoderNode --[Packet]--> RTSPStreamerNode
+ *                                                    |
+ *                                                    +--[Packet]--> FileWriterNode
  *
  * Usage:
  *   ./v4l2_rkmpp_enc [device] [output] [num_frames] [h264|h265] [rtsp_url]
@@ -17,15 +19,27 @@
 #include <unistd.h>
 
 #include <iostream>
+#include <memory>
 #include <stdexcept>
+#include <signal.h>
 
-#include "v4l2_capture.h"
-#include "ffmpeg_encoder.h"
-#include "rtsp_streamer.h"
+#include "v4l2_capture_node.h"
+#include "ffmpeg_encoder_node.h"
+#include "rtsp_streamer_node.h"
+#include "file_writer_node.h"
+#include "pipeline.h"
+#include "blocking_queue.h"
+#include "common.h"
+
+static Pipeline *g_pipeline = nullptr;
+
+static void signal_handler(int) {
+    if (g_pipeline) g_pipeline->stop();
+}
 
 int main(int argc, char **argv)
 {
-    std::cout << "V4L2 -> RKMPP H264/H265 Encoder + RTSP\n"
+    std::cout << "V4L2 -> RKMPP H264/H265 Encoder + RTSP (Pipeline)\n"
               << "\n"
               << "Usage: v4l2_rkmpp_enc [device] [output] [num_frames] [codec] [rtsp_url]\n"
               << "\n"
@@ -61,77 +75,74 @@ int main(int argc, char **argv)
               << std::endl;
 
     try {
-        /* 1. V4L2 capture */
-        V4L2Capture cap;
-        V4L2Capture::Config cap_cfg;
+        /* Create queues */
+        BlockingQueue<Frame>  cap_to_enc(4);   /* capture -> encoder */
+        BlockingQueue<Packet> enc_to_file(8);   /* encoder -> file writer */
+        BlockingQueue<Packet> enc_to_rtsp(8);   /* encoder -> rtsp (optional) */
+
+        /* Create nodes */
+        V4L2CaptureNode::Config cap_cfg;
         cap_cfg.device = device;
-        cap.open(cap_cfg);
-        cap.start_streaming();
 
-        /* 2. Encoder */
-        FFmpegEncoder enc;
-        FFmpegEncoder::Config enc_cfg;
-        enc_cfg.width   = cap.width();
-        enc_cfg.height  = cap.height();
-        enc_cfg.codec   = codec_type;
-        enc.open(enc_cfg);
+        FFmpegEncoderNode::Config enc_cfg;
+        enc_cfg.codec = codec_type;
 
-        /* 3. Output file */
-        FILE *fp = fopen(outfile, "wb");
-        if (!fp)
-            throw std::runtime_error(std::string("Cannot open ") + outfile + ": " + strerror(errno));
-        printf("Writing to %s\n", outfile);
+        auto cap_node  = std::make_shared<V4L2CaptureNode>(cap_cfg);
+        auto enc_node  = std::make_shared<FFmpegEncoderNode>(enc_cfg);
+        auto file_node = std::make_shared<FileWriterNode>(outfile);
 
-        /* 4. RTSP streamer (optional) */
-        RTSPStreamer rtsp;
+        /* Wire up queues */
+        cap_node->set_output(&cap_to_enc);
+        enc_node->set_input(&cap_to_enc);
+        enc_node->add_output(&enc_to_file);
+        file_node->set_input(&enc_to_file);
+
+        /* Build pipeline */
+        Pipeline pipeline;
+        pipeline.add_node(cap_node);
+        pipeline.add_node(enc_node);
+        pipeline.add_node(file_node);
+
+        pipeline.register_closer([&cap_to_enc]() { cap_to_enc.close(); });
+        pipeline.register_closer([&enc_to_file]() { enc_to_file.close(); });
+
+        /* Optional RTSP */
+        std::shared_ptr<RTSPStreamerNode> rtsp_node;
         if (rtsp_url) {
-            RTSPStreamer::Config rtsp_cfg;
-            rtsp_cfg.url    = rtsp_url;
-            rtsp_cfg.width  = cap.width();
-            rtsp_cfg.height = cap.height();
-            rtsp.open(rtsp_cfg, enc.codec_ctx());
+            RTSPStreamerNode::Config rtsp_cfg;
+            rtsp_cfg.url = rtsp_url;
+
+            rtsp_node = std::make_shared<RTSPStreamerNode>(rtsp_cfg);
+            rtsp_node->set_input(&enc_to_rtsp);
+            enc_node->add_output(&enc_to_rtsp);
+            pipeline.add_node(rtsp_node);
+            pipeline.register_closer([&enc_to_rtsp]() { enc_to_rtsp.close(); });
         }
 
-        /* 5. Packet callback: write to file + push RTSP */
-        enc.set_packet_callback([&](const AVPacket *pkt) {
-            fwrite(pkt->data, 1, pkt->size, fp);
-            if (rtsp_url)
-                rtsp.write_packet(pkt);
-        });
+        /* Install signal handler for graceful shutdown */
+        g_pipeline = &pipeline;
+        signal(SIGINT, signal_handler);
+        signal(SIGTERM, signal_handler);
 
-        /* 6. Capture + Encode loop */
-        int frame_cnt = 0;
-        int64_t pts   = 0;
+        /* Init nodes in dependency order */
+        cap_node->init();
+        enc_node->set_resolution(cap_node->width(), cap_node->height());
+        enc_node->init();
 
-        printf("Capturing %d frames...\n", max_frames);
-
-        while (frame_cnt < max_frames) {
-            struct v4l2_plane planes[1];
-            struct v4l2_buffer vbuf;
-
-            if (!cap.dequeue(vbuf, planes)) {
-                usleep(1000);
-                continue;
-            }
-
-            enc.encode_nv12(cap.buffer(vbuf.index).start, pts++);
-
-            cap.enqueue(vbuf);
-
-            frame_cnt++;
-            if (frame_cnt % 30 == 0)
-                printf("  encoded %d frames\n", frame_cnt);
+        if (rtsp_node) {
+            rtsp_node->set_codec_ctx(enc_node->codec_ctx());
         }
 
-        /* 7. Flush */
-        enc.flush();
+        file_node->init();
 
-        /* 8. Cleanup */
-        fclose(fp);
-        cap.stop_streaming();
-        /* RTSPStreamer / FFmpegEncoder destructors handle their own cleanup */
+        /* Start all node threads */
+        pipeline.start();
 
-        printf("Done. %d frames encoded to %s\n", frame_cnt, outfile);
+        /* Wait for completion */
+        pipeline.wait();
+
+        printf("Done.\n");
+
     } catch (const std::exception &e) {
         fprintf(stderr, "Error: %s\n", e.what());
         return 1;

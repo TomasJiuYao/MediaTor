@@ -14,7 +14,7 @@ class FFmpegEncoder {
 public:
     enum Codec { H264, H265 };
 
-    /* Called for each encoded packet. User can write to file, push RTSP, etc. */
+    /* Called for each encoded packet produced by encode_with_packets() */
     using PacketCallback = std::function<void(const AVPacket *pkt)>;
 
     struct Config {
@@ -36,13 +36,9 @@ public:
 
     void open(const Config &cfg);
 
-    /* Set a callback to receive each encoded AVPacket.
-     * Can be called before or after open(). */
-    void set_packet_callback(PacketCallback cb);
-
-    /* Encode a single NV12 buffer.
+    /* Encode a single NV12 buffer, calling cb for each output packet.
      * data points to the mmap'd V4L2 buffer (NV12 layout). */
-    void encode_nv12(const void *data, int64_t pts);
+    void encode_with_packets(const void *data, int64_t pts, PacketCallback cb);
 
     /* Flush the encoder */
     void flush();
@@ -52,7 +48,7 @@ public:
 
 private:
     static void fill_nv12_frame(AVFrame *frame, const void *data, int width, int height);
-    void do_encode(AVFrame *frame);
+    void do_encode(AVFrame *frame, PacketCallback &cb);
     void close();
 
     Config          cfg_;
@@ -62,5 +58,4 @@ private:
     AVFrame        *frame_yuv_ = nullptr;
     AVPacket       *pkt_       = nullptr;
     SwsContext     *sws_       = nullptr;
-    PacketCallback  on_packet_;
 };

@@ -23,10 +23,6 @@ FFmpegEncoder::~FFmpegEncoder() {
     close();
 }
 
-void FFmpegEncoder::set_packet_callback(PacketCallback cb) {
-    on_packet_ = std::move(cb);
-}
-
 void FFmpegEncoder::open(const Config &cfg) {
     cfg_ = cfg;
 
@@ -70,19 +66,6 @@ void FFmpegEncoder::open(const Config &cfg) {
            enc_ctx_->width, enc_ctx_->height, enc_ctx_->bit_rate,
            cfg.fps, enc_ctx_->gop_size, enc_ctx_->max_b_frames);
 
-
-    // VBR - 质量优先，码率波动大
-    // av_opt_set(enc_ctx_->priv_data, "rc_mode", "VBR", 0);
-
-    // CQP - 固定质量，最简单
-    // av_opt_set(enc_ctx_->priv_data, "rc_mode", "CQP", 0);
-    // av_opt_set(enc_ctx_->priv_data, "qp", "25", 0);
-
-    // CBR + QP 范围约束
-    // av_opt_set(enc_ctx_->priv_data, "rc_mode", "CBR", 0);
-    // av_opt_set(enc_ctx_->priv_data, "qp_min", "18", 0);
-    // av_opt_set(enc_ctx_->priv_data, "qp_max", "40", 0);
-
     if (is_rkmpp_)
     {
         if (av_opt_set(enc_ctx_->priv_data, "rc_mode", "VBR", 0) < 0)
@@ -97,9 +80,7 @@ void FFmpegEncoder::open(const Config &cfg) {
                 fprintf(stderr, "Warning: failed to set preset=ultrafast\n");
             if (av_opt_set(enc_ctx_->priv_data, "tune",    "zerolatency", 0) < 0)
                 fprintf(stderr, "Warning: failed to set tune=zerolatency\n");
-            /* Allow encoder to output before receiving all B-frame references */
             enc_ctx_->flags |= AV_CODEC_FLAG_LOW_DELAY;
-            /* Tell decoder it may receive frames out of order */
             enc_ctx_->flags2 |= AV_CODEC_FLAG2_FAST;
         } else {
             if (av_opt_set(enc_ctx_->priv_data, "preset", "medium", 0) < 0)
@@ -141,7 +122,7 @@ void FFmpegEncoder::fill_nv12_frame(AVFrame *frame, const void *data, int width,
     memcpy(frame->data[1], static_cast<const uint8_t *>(data) + y_size, y_size / 2);
 }
 
-void FFmpegEncoder::do_encode(AVFrame *frame) {
+void FFmpegEncoder::do_encode(AVFrame *frame, PacketCallback &cb) {
     int ret = avcodec_send_frame(enc_ctx_, frame);
     if (ret < 0) {
         fprintf(stderr, "avcodec_send_frame: %s\n", av_err2str_c(ret));
@@ -155,18 +136,18 @@ void FFmpegEncoder::do_encode(AVFrame *frame) {
             fprintf(stderr, "avcodec_receive_packet: %s\n", av_err2str_c(ret));
             return;
         }
-        if (on_packet_)
-            on_packet_(pkt_);
+        if (cb)
+            cb(pkt_);
         av_packet_unref(pkt_);
     }
 }
 
-void FFmpegEncoder::encode_nv12(const void *data, int64_t pts) {
+void FFmpegEncoder::encode_with_packets(const void *data, int64_t pts, PacketCallback cb) {
     if (is_rkmpp_) {
         av_frame_make_writable(frame_);
         fill_nv12_frame(frame_, data, cfg_.width, cfg_.height);
         frame_->pts = pts;
-        do_encode(frame_);
+        do_encode(frame_, cb);
     } else {
         /* NV12 -> YUV420P conversion */
         av_frame_make_writable(frame_yuv_);
@@ -179,13 +160,14 @@ void FFmpegEncoder::encode_nv12(const void *data, int64_t pts) {
                   0, cfg_.height,
                   frame_yuv_->data, frame_yuv_->linesize);
         frame_yuv_->pts = pts;
-        do_encode(frame_yuv_);
+        do_encode(frame_yuv_, cb);
     }
 }
 
 void FFmpegEncoder::flush() {
     printf("Flushing encoder...\n");
-    do_encode(nullptr);
+    PacketCallback noop;
+    do_encode(nullptr, noop);
 }
 
 AVPixelFormat FFmpegEncoder::pix_fmt() const {

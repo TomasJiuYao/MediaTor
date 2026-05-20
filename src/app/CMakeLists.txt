@@ -3,6 +3,11 @@ add_executable(v4l2_rkmpp_enc
     v4l2_capture.cpp
     ffmpeg_encoder.cpp
     rtsp_streamer.cpp
+    v4l2_capture_node.cpp
+    ffmpeg_encoder_node.cpp
+    rtsp_streamer_node.cpp
+    file_writer_node.cpp
+    pipeline.cpp
 )
 
 target_include_directories(v4l2_rkmpp_enc PRIVATE

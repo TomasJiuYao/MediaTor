@@ -194,6 +194,22 @@ void V4L2Capture::enqueue(struct v4l2_buffer &vbuf) {
         throw std::runtime_error(std::string("VIDIOC_QBUF: ") + strerror(errno));
 }
 
+void V4L2Capture::enqueue_by_index(int index) {
+    struct v4l2_plane planes[FMT_NUM_PLANES];
+    struct v4l2_buffer buf;
+    memset(&buf, 0, sizeof(buf));
+    buf.type   = buf_type_;
+    buf.memory = V4L2_MEMORY_MMAP;
+    buf.index  = index;
+    if (mplane_) {
+        buf.m.planes = planes;
+        buf.length   = FMT_NUM_PLANES;
+    }
+    enqueue(buf);
+}
+
+int V4L2Capture::fd() const { return fd_; }
+
 const V4L2Capture::Buffer &V4L2Capture::buffer(int index) const { return bufs_[index]; }
 int  V4L2Capture::width()     const { return cap_w_; }
 int  V4L2Capture::height()    const { return cap_h_; }

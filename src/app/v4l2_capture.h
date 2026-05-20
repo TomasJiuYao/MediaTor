@@ -36,6 +36,12 @@ public:
     /* Re-queue a buffer after use */
     void enqueue(struct v4l2_buffer &vbuf);
 
+    /* Re-queue a buffer by index (convenience for Frame release callback) */
+    void enqueue_by_index(int index);
+
+    /* Expose fd for epoll */
+    int fd() const;
+
     const Buffer &buffer(int index) const;
     int  width()     const;
     int  height()    const;
