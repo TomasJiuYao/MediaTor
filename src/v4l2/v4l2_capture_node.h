@@ -4,6 +4,7 @@
 #include "blocking_queue.h"
 #include "common.h"
 #include "v4l2_capture.h"
+#include "epoll_poller.h"
 
 #include <memory>
 
@@ -35,5 +36,5 @@ private:
     Config                cfg_;
     V4L2Capture           cap_;
     BlockingQueue<Frame> *output_ = nullptr;
-    int                   epoll_fd_ = -1;
+    EpollPoller           poller_;
 };
