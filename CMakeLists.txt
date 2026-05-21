@@ -28,14 +28,18 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
 # FFmpeg headers
-set(FFMPEG_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/src/core/include/ffmpeg)
+set(FFMPEG_INCLUDE_DIR ${CMAKE_SOURCE_DIR}/src/include/ffmpeg)
 
 # FFmpeg static libraries
-set(FFMPEG_LIB_DIR ${CMAKE_SOURCE_DIR}/lib)
+set(FFMPEG_LIB_DIR ${CMAKE_SOURCE_DIR}/lib/ffmpeg)
 
 # Output executables to release/
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/release)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_DEBUG ${CMAKE_SOURCE_DIR}/release)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE ${CMAKE_SOURCE_DIR}/release)
 
+add_subdirectory(src/common)
+add_subdirectory(src/v4l2)
+add_subdirectory(src/encoder)
+add_subdirectory(src/rtsp)
 add_subdirectory(src/app)
