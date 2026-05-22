@@ -34,7 +34,7 @@ void RTSPStreamer::open(const Config &cfg, const AVCodecContext *codec_ctx) {
     /* Flush packets immediately, no buffering */
     av_opt_set(fmt_ctx_->priv_data, "flush_packets", "1", 0);
     /* Use UDP for lower latency (TCP adds framing overhead + head-of-line blocking) */
-    av_opt_set(fmt_ctx_->priv_data, "rtsp_transport", "udp", 0);
+    av_opt_set(fmt_ctx_->priv_data, "rtsp_transport", "tcp", 0);
     /* Minimize UDP packetization latency (ms) — send partial packets sooner */
     av_opt_set(fmt_ctx_->priv_data, "max_delay", "0", 0);
     /* No AVIO buffering — write to network as fast as possible */
@@ -57,7 +57,7 @@ void RTSPStreamer::open(const Config &cfg, const AVCodecContext *codec_ctx) {
     if (!(fmt_ctx_->oformat->flags & AVFMT_NOFILE)) {
         AVDictionary *opts = nullptr;
         /* TCP fallback if UDP blocked — but prefer UDP for latency */
-        av_dict_set(&opts, "rtsp_transport", "udp", 0);
+        av_dict_set(&opts, "rtsp_transport", "tcp", 0);
         /* Connection timeout (microseconds) */
         av_dict_set(&opts, "stimeout", "5000000", 0);
 
@@ -72,7 +72,7 @@ void RTSPStreamer::open(const Config &cfg, const AVCodecContext *codec_ctx) {
         throw std::runtime_error(std::string("Could not write RTSP header: ") + av_err2str_c(ret));
 
     opened_ = true;
-    printf("RTSP: streaming to %s (udp, low-latency)\n", cfg.url);
+    printf("RTSP: streaming to %s (tcp)\n", cfg.url);
 }
 
 void RTSPStreamer::write_packet(const AVPacket *pkt) {

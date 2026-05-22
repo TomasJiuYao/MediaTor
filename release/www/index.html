@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MediaTor Control Panel</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; color: #333; }
+
+.header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+.header h1 { font-size: 20px; font-weight: 600; }
+.header .version { font-size: 12px; opacity: 0.6; }
+
+.container { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+
+.card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; overflow: hidden; }
+.card-header { padding: 16px 20px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; }
+.card-header h2 { font-size: 16px; font-weight: 600; }
+.card-body { padding: 20px; }
+
+/* Video player */
+.video-wrapper { position: relative; width: 100%; background: #000; border-radius: 8px; overflow: hidden; aspect-ratio: 16/9; }
+.video-wrapper video { width: 100%; height: 100%; object-fit: contain; }
+.video-overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: #888; font-size: 14px; pointer-events: none; }
+.video-overlay.hidden { display: none; }
+.video-controls { display: flex; gap: 12px; margin-top: 12px; align-items: center; }
+.video-controls .btn-sm { padding: 8px 20px; }
+
+/* Stream control */
+.stream-status { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+.status-dot { width: 12px; height: 12px; border-radius: 50%; background: #ccc; }
+.status-dot.active { background: #52c41a; box-shadow: 0 0 8px rgba(82,196,26,0.5); animation: pulse 2s infinite; }
+.status-dot.stopping { background: #faad14; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.status-text { font-size: 14px; }
+.status-text .label { color: #888; }
+.status-text .value { font-weight: 600; margin-left: 6px; }
+
+.stream-config { display: grid; grid-template-columns: auto 1fr; gap: 10px 16px; align-items: center; margin-bottom: 20px; }
+.stream-config label { font-size: 14px; color: #666; text-align: right; }
+.stream-config input { padding: 8px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 14px; width: 100%; }
+.stream-config input:focus { outline: none; border-color: #1890ff; box-shadow: 0 0 0 2px rgba(24,144,255,0.2); }
+
+.btn-group { display: flex; gap: 12px; }
+.btn { padding: 10px 32px; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-start { background: #52c41a; color: #fff; }
+.btn-start:hover:not(:disabled) { background: #45b017; }
+.btn-stop { background: #ff4d4f; color: #fff; }
+.btn-stop:hover:not(:disabled) { background: #e04345; }
+.btn-primary { background: #1890ff; color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #0e7de5; }
+.btn-sm { padding: 6px 16px; font-size: 12px; }
+
+/* Log */
+.log-box { background: #1a1a2e; color: #a0d911; font-family: "SF Mono", "Cascadia Code", Consolas, monospace; font-size: 12px; padding: 16px; border-radius: 8px; height: 180px; overflow-y: auto; line-height: 1.6; }
+.log-box .time { color: #666; margin-right: 8px; }
+.log-box .err { color: #ff4d4f; }
+.log-box .ok { color: #52c41a; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>MediaTor Control Panel</h1>
+  <span class="version">v0.1.0</span>
+</div>
+
+<div class="container">
+
+  <!-- Video Player -->
+  <div class="card">
+    <div class="card-header"><h2>Live Preview</h2></div>
+    <div class="card-body">
+      <div class="video-wrapper">
+        <iframe id="go2rtcPlayer" style="width:100%;height:100%;border:none;" src="" allow="autoplay; encrypted-media"></iframe>
+        <div class="video-overlay" id="videoOverlay">No Signal</div>
+      </div>
+      <div class="video-controls">
+        <button class="btn btn-start btn-sm" id="btnPlay" onclick="playVideo()">Play</button>
+        <button class="btn btn-stop btn-sm" id="btnStopPlay" onclick="stopVideo()" disabled>Stop</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RTSP Stream Control -->
+  <div class="card">
+    <div class="card-header">
+      <h2>RTSP Stream Control</h2>
+      <button class="btn btn-primary btn-sm" onclick="refreshStatus()">Refresh</button>
+    </div>
+    <div class="card-body">
+      <div class="stream-status">
+        <div class="status-dot" id="statusDot"></div>
+        <div class="status-text">
+          <span class="label">Status:</span>
+          <span class="value" id="statusText">Unknown</span>
+        </div>
+      </div>
+
+      <div class="stream-config">
+        <label>RTSP URL</label>
+        <input type="text" id="rtspUrl" value="rtsp://192.168.42.110:8554/live" placeholder="rtsp://host:port/path">
+        <label>go2rtc</label>
+        <input type="text" id="go2rtcAddr" value="192.168.42.110:1984" placeholder="host:port">
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-start" id="btnStart" onclick="startStream()">Start Stream</button>
+        <button class="btn btn-stop" id="btnStop" onclick="stopStream()" disabled>Stop Stream</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Event Log -->
+  <div class="card">
+    <div class="card-header">
+      <h2>Event Log</h2>
+      <button class="btn btn-primary btn-sm" onclick="clearLog()">Clear</button>
+    </div>
+    <div class="card-body">
+      <div class="log-box" id="logBox"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+
+function log(msg, cls) {
+  const box = document.getElementById('logBox');
+  const now = new Date().toLocaleTimeString();
+  box.innerHTML += '<div><span class="time">[' + now + ']</span><span class="' + (cls||'') + '">' + msg + '</span></div>';
+  box.scrollTop = box.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('logBox').innerHTML = '';
+}
+
+function updateUI(data) {
+  const dot = document.getElementById('statusDot');
+  const text = document.getElementById('statusText');
+  const btnStart = document.getElementById('btnStart');
+  const btnStop = document.getElementById('btnStop');
+
+  if (data.running) {
+    dot.className = 'status-dot active';
+    text.textContent = 'Streaming';
+    text.style.color = '#52c41a';
+    btnStart.disabled = true;
+    btnStop.disabled = false;
+  } else if (data.enabled) {
+    dot.className = 'status-dot stopping';
+    text.textContent = 'Starting...';
+    text.style.color = '#faad14';
+    btnStart.disabled = true;
+    btnStop.disabled = false;
+  } else {
+    dot.className = 'status-dot';
+    text.textContent = 'Stopped';
+    text.style.color = '#999';
+    btnStart.disabled = false;
+    btnStop.disabled = true;
+  }
+}
+
+function refreshStatus() {
+  fetch('/api/stream/status')
+    .then(r => r.json())
+    .then(data => { updateUI(data); })
+    .catch(e => { log('Status fetch failed: ' + e.message, 'err'); });
+}
+
+function startStream() {
+  const url = document.getElementById('rtspUrl').value;
+  if (!url) { log('RTSP URL is empty', 'err'); return; }
+  log('Starting stream -> ' + url);
+  fetch('/api/stream/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({rtsp_url: url})
+  })
+    .then(r => r.json())
+    .then(data => { log('Stream started: ' + JSON.stringify(data), 'ok'); refreshStatus(); })
+    .catch(e => { log('Start failed: ' + e.message, 'err'); });
+}
+
+function stopStream() {
+  stopVideo();
+  log('Stopping stream...');
+  fetch('/api/stream/stop', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => { log('Stream stopped: ' + JSON.stringify(data), 'ok'); refreshStatus(); })
+    .catch(e => { log('Stop failed: ' + e.message, 'err'); });
+}
+
+// ---------- Video player via go2rtc iframe ----------
+
+function playVideo() {
+  const go2rtcAddr = document.getElementById('go2rtcAddr').value;
+  if (!go2rtcAddr) { log('go2rtc address is empty', 'err'); return; }
+
+  const src = 'live';
+  const iframe = document.getElementById('go2rtcPlayer');
+  // timestamp to force reload on every play
+  iframe.src = 'http://' + go2rtcAddr + '/stream.html?src=' + encodeURIComponent(src) + '&t=' + Date.now();
+
+  document.getElementById('videoOverlay').classList.add('hidden');
+  document.getElementById('btnPlay').disabled = true;
+  document.getElementById('btnStopPlay').disabled = false;
+  log('Playing via go2rtc: ' + src, 'ok');
+}
+
+function stopVideo() {
+  const iframe = document.getElementById('go2rtcPlayer');
+  iframe.src = 'about:blank';
+  document.getElementById('videoOverlay').classList.remove('hidden');
+  document.getElementById('btnPlay').disabled = false;
+  document.getElementById('btnStopPlay').disabled = true;
+}
+
+// Init
+refreshStatus();
+setInterval(refreshStatus, 5000);
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+streams:
+  live: rtsp://127.0.0.1:8554/live
+
+api:
+  listen: ":1984"
+rtsp:
+  listen: ":8555"    # 改端口，避免和 mediamtx 冲突

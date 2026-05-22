@@ -35,3 +35,23 @@ target_link_libraries(v4l2_rkmpp_enc PRIVATE
     z
     bz2
 )
+
+# HTTP demo server based on workflow
+add_executable(http_demo_server
+    http_demo_server.cpp
+)
+
+target_include_directories(http_demo_server PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/include
+)
+
+target_link_libraries(http_demo_server PRIVATE
+    ${CMAKE_SOURCE_DIR}/lib/workflow/libworkflow.a
+    ssl
+    crypto
+    m
+    pthread
+    dl
+    z
+    bz2
+)
