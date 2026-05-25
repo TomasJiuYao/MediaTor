@@ -113,6 +113,27 @@ body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-
     </div>
   </div>
 
+  <!-- RTSP Pull Player -->
+  <div class="card">
+    <div class="card-header"><h2>RTSP Pull Player</h2></div>
+    <div class="card-body">
+      <div class="video-wrapper">
+        <iframe id="pullPlayer" style="width:100%;height:100%;border:none;" src="" allow="autoplay; encrypted-media"></iframe>
+        <div class="video-overlay" id="pullOverlay">No Signal</div>
+      </div>
+      <div class="video-controls">
+        <button class="btn btn-primary btn-sm" id="btnPullPlay" onclick="pullPlay()">Play</button>
+        <button class="btn btn-stop btn-sm" id="btnPullStop" onclick="pullStop()" disabled>Stop</button>
+      </div>
+      <div class="stream-config" style="margin-top:16px;">
+        <label>RTSP URL</label>
+        <input type="text" id="pullRtspUrl" value="" placeholder="rtsp://host:port/path">
+        <label>go2rtc</label>
+        <input type="text" id="pullGo2rtcAddr" value="192.168.42.110:1984" placeholder="host:port">
+      </div>
+    </div>
+  </div>
+
   <!-- Event Log -->
   <div class="card">
     <div class="card-header">
@@ -219,6 +240,33 @@ function stopVideo() {
   document.getElementById('videoOverlay').classList.remove('hidden');
   document.getElementById('btnPlay').disabled = false;
   document.getElementById('btnStopPlay').disabled = true;
+}
+
+// ---------- RTSP Pull Player via go2rtc ----------
+
+function pullPlay() {
+  const rtspUrl = document.getElementById('pullRtspUrl').value.trim();
+  const go2rtcAddr = document.getElementById('pullGo2rtcAddr').value.trim();
+  if (!rtspUrl) { log('Pull: RTSP URL is empty', 'err'); return; }
+  if (!go2rtcAddr) { log('Pull: go2rtc address is empty', 'err'); return; }
+
+  pullStop();
+
+  const iframe = document.getElementById('pullPlayer');
+  iframe.src = 'http://' + go2rtcAddr + '/stream.html?src=' + encodeURIComponent(rtspUrl) + '&t=' + Date.now();
+
+  document.getElementById('pullOverlay').classList.add('hidden');
+  document.getElementById('btnPullPlay').disabled = true;
+  document.getElementById('btnPullStop').disabled = false;
+  log('Pull: playing ' + rtspUrl, 'ok');
+}
+
+function pullStop() {
+  const iframe = document.getElementById('pullPlayer');
+  iframe.src = 'about:blank';
+  document.getElementById('pullOverlay').classList.remove('hidden');
+  document.getElementById('btnPullPlay').disabled = false;
+  document.getElementById('btnPullStop').disabled = true;
 }
 
 // Init

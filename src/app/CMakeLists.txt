@@ -55,3 +55,60 @@ target_link_libraries(http_demo_server PRIVATE
     z
     bz2
 )
+
+# RTSP pull -> RKMPP decode -> DRM display
+add_executable(rtsp_pull_decode_display
+    rtsp_pull_decode_display.cpp
+)
+
+target_include_directories(rtsp_pull_decode_display PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/common
+    ${CMAKE_SOURCE_DIR}/src/decoder
+    ${CMAKE_SOURCE_DIR}/src/display
+)
+
+target_link_libraries(rtsp_pull_decode_display PRIVATE
+    medtor_decoder
+    medtor_display
+    medtor_common
+    ${FFMPEG_LIB_DIR}/libavformat.a
+    ${FFMPEG_LIB_DIR}/libavcodec.a
+    ${FFMPEG_LIB_DIR}/libswresample.a
+    ${FFMPEG_LIB_DIR}/libavutil.a
+    ${FFMPEG_LIB_DIR}/libswscale.a
+    rockchip_mpp
+    drm
+    rga
+    m
+    pthread
+    dl
+    z
+    bz2
+)
+
+# RTSP pull -> RKMPP decode -> NV12 file save
+add_executable(rtsp_pull_decode_nv12
+    rtsp_pull_decode_nv12.cpp
+)
+
+target_include_directories(rtsp_pull_decode_nv12 PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/common
+    ${FFMPEG_INCLUDE_DIR}
+    ${TOOLCHAIN_SYSROOT}/usr/include/libdrm
+)
+
+target_link_libraries(rtsp_pull_decode_nv12 PRIVATE
+    ${FFMPEG_LIB_DIR}/libavformat.a
+    ${FFMPEG_LIB_DIR}/libavcodec.a
+    ${FFMPEG_LIB_DIR}/libswresample.a
+    ${FFMPEG_LIB_DIR}/libavutil.a
+    ${FFMPEG_LIB_DIR}/libswscale.a
+    rockchip_mpp
+    drm
+    rga
+    m
+    pthread
+    dl
+    z
+    bz2
+)

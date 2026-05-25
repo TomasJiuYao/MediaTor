@@ -78,3 +78,31 @@ struct Packet {
     Packet(const Packet &) = delete;
     Packet &operator=(const Packet &) = delete;
 };
+
+/* Decoded frame passed from RKMPPDecoderNode -> DRMDisplayNode */
+struct DecodedFrame {
+    AVFrame *frame = nullptr;  /* AV_PIX_FMT_DRM_PRIME */
+
+    DecodedFrame() = default;
+
+    explicit DecodedFrame(AVFrame *f) : frame(f) {}
+
+    ~DecodedFrame() {
+        if (frame) av_frame_free(&frame);
+    }
+
+    /* move-only */
+    DecodedFrame(DecodedFrame &&o) noexcept : frame(o.frame) { o.frame = nullptr; }
+
+    DecodedFrame &operator=(DecodedFrame &&o) noexcept {
+        if (this != &o) {
+            if (frame) av_frame_free(&frame);
+            frame = o.frame;
+            o.frame = nullptr;
+        }
+        return *this;
+    }
+
+    DecodedFrame(const DecodedFrame &) = delete;
+    DecodedFrame &operator=(const DecodedFrame &) = delete;
+};
