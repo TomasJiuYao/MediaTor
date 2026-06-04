@@ -12,7 +12,7 @@ extern "C" {
 
 class FFmpegEncoder {
 public:
-    enum Codec { H264, H265 };
+    enum Codec { H264, H265, MJPEG };
 
     /* Called for each encoded packet produced by encode_with_packets() */
     using PacketCallback = std::function<void(const AVPacket *pkt)>;

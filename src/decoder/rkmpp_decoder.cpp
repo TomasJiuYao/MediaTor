@@ -17,11 +17,23 @@ static const char *dec_av_err2str(int errnum) {
 
 void RKMPPDecoderNode::init() {
     /* Find RKMPP decoder */
-    const char *codec_name = (cfg_.codec == H265) ? "hevc_rkmpp" : "h264_rkmpp";
+    const char *codec_name = nullptr;
+    if (cfg_.codec == H265)
+        codec_name = "hevc_rkmpp";
+    else if (cfg_.codec == MJPEG)
+        codec_name = "mjpeg_rkmpp";
+    else
+        codec_name = "h264_rkmpp";
+
     const AVCodec *codec = avcodec_find_decoder_by_name(codec_name);
     if (!codec) {
         fprintf(stderr, "[RKMPPDecoder] %s not found, falling back to software\n", codec_name);
-        codec_name = (cfg_.codec == H265) ? "hevc" : "h264";
+        if (cfg_.codec == H265)
+            codec_name = "hevc";
+        else if (cfg_.codec == MJPEG)
+            codec_name = "mjpeg";
+        else
+            codec_name = "h264";
         codec = avcodec_find_decoder_by_name(codec_name);
     }
     if (!codec)
@@ -40,17 +52,28 @@ void RKMPPDecoderNode::init() {
             throw std::runtime_error(std::string("Could not copy codec params: ") + dec_av_err2str(ret));
     }
 
-    /* Setup DRM/RKMPP hardware device context */
-    bool is_rkmpp = (strstr(codec->name, "rkmpp") != nullptr);
-    if (is_rkmpp) {
-        int ret = av_hwdevice_ctx_create(&hw_dev_ctx_, AV_HWDEVICE_TYPE_DRM,
-                                          cfg_.drm_device, nullptr, 0);
-        if (ret < 0) {
-            fprintf(stderr, "[RKMPPDecoder] could not create DRM hw device: %s\n", dec_av_err2str(ret));
-        } else {
-            dec_ctx_->hw_device_ctx = av_buffer_ref(hw_dev_ctx_);
-            printf("[RKMPPDecoder] DRM hw device ctx created on %s\n", cfg_.drm_device);
+    /* Set dimensions from config if no codec_params_ */
+    if (!codec_params_) {
+        if (cfg_.width > 0 && cfg_.height > 0) {
+            dec_ctx_->width  = cfg_.width;
+            dec_ctx_->height = cfg_.height;
         }
+    }
+
+    bool is_rkmpp = (strstr(codec->name, "rkmpp") != nullptr);
+
+    /* get_format callback: request NV12 output from RKMPP decoder.
+     * Without this, the decoder may output DRM_PRIME frames that
+     * cannot be properly allocated, causing "invalid buffer size 0". */
+    if (is_rkmpp) {
+        dec_ctx_->get_format = [](AVCodecContext *ctx,
+                                  const enum AVPixelFormat *fmts) -> enum AVPixelFormat {
+            for (const enum AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE; p++) {
+                if (*p == AV_PIX_FMT_NV12)
+                    return AV_PIX_FMT_NV12;
+            }
+            return AV_PIX_FMT_NONE;
+        };
     }
 
     dec_ctx_->thread_count = 1;

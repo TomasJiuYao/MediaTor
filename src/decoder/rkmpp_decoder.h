@@ -12,11 +12,13 @@ extern "C" {
 
 class RKMPPDecoderNode : public NodeBase {
 public:
-    enum Codec { H264, H265 };
+    enum Codec { H264, H265, MJPEG };
 
     struct Config {
         Codec       codec      = H264;
-        const char *drm_device = "/dev/card0";
+        const char *drm_device = "/dev/dri/card0";
+        int         width      = 0;
+        int         height     = 0;
     };
 
     explicit RKMPPDecoderNode(const Config &cfg) : cfg_(cfg) {}

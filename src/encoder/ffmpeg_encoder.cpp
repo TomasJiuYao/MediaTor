@@ -28,7 +28,15 @@ void FFmpegEncoder::open(const Config &cfg) {
 
     /* Find encoder: try RKMPP first, fallback to software */
     const AVCodec *codec = nullptr;
-    if (cfg.codec == H265) {
+    if (cfg.codec == MJPEG) {
+        codec = avcodec_find_encoder_by_name("mjpeg_rkmpp");
+        if (!codec) {
+            fprintf(stderr, "mjpeg_rkmpp not found, trying mjpeg\n");
+            codec = avcodec_find_encoder_by_name("mjpeg");
+        }
+        if (!codec)
+            throw std::runtime_error("No MJPEG encoder found");
+    } else if (cfg.codec == H265) {
         codec = avcodec_find_encoder_by_name("hevc_rkmpp");
         if (!codec) {
             fprintf(stderr, "hevc_rkmpp not found, trying libx265\n");
@@ -59,7 +67,11 @@ void FFmpegEncoder::open(const Config &cfg) {
     enc_ctx_->time_base = (AVRational){ 1, cfg.fps };
     enc_ctx_->framerate = (AVRational){ cfg.fps, 1 };
     enc_ctx_->gop_size  = cfg.gop_size;
+    if (cfg.codec == MJPEG)
+        enc_ctx_->gop_size = 1;  /* MJPEG: every frame is keyframe */
     enc_ctx_->max_b_frames = cfg.b_frames;
+    if (cfg.codec == MJPEG)
+        enc_ctx_->max_b_frames = 0;
     enc_ctx_->pix_fmt   = AV_PIX_FMT_NV12;
 
     printf("Encoder config: %dx%d, bitrate=%ld, fps=%d, gop=%d, b_frames=%d, pix_fmt=NV12\n",
@@ -68,10 +80,17 @@ void FFmpegEncoder::open(const Config &cfg) {
 
     if (is_rkmpp_)
     {
-        if (av_opt_set(enc_ctx_->priv_data, "rc_mode", "VBR", 0) < 0)
-            fprintf(stderr, "Warning: failed to set rc_mode=VBR\n");
-        else
-            printf("Using RKMPP encoder with VBR mode\n");
+        if (cfg.codec == MJPEG) {
+            if (av_opt_set(enc_ctx_->priv_data, "rc_mode", "CBR", 0) < 0)
+                fprintf(stderr, "Warning: failed to set rc_mode=CBR\n");
+            else
+                printf("Using RKMPP MJPEG encoder with CBR mode\n");
+        } else {
+            if (av_opt_set(enc_ctx_->priv_data, "rc_mode", "VBR", 0) < 0)
+                fprintf(stderr, "Warning: failed to set rc_mode=VBR\n");
+            else
+                printf("Using RKMPP encoder with VBR mode\n");
+        }
     }
     else {
         enc_ctx_->pix_fmt = AV_PIX_FMT_YUV420P;

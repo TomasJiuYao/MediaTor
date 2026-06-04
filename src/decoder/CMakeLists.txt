@@ -1,7 +1,9 @@
-# Decoder module: RTSP puller + RKMPP decoder
+# Decoder module: RTSP puller + RKMPP decoder + NV12 file writer
 add_library(medtor_decoder STATIC
     rtsp_puller.cpp
     rkmpp_decoder.cpp
+    nv12_file_writer_node.cpp
+    mjpeg_file_reader_node.cpp
 )
 
 target_include_directories(medtor_decoder PUBLIC
