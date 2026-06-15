@@ -13,6 +13,7 @@ struct Frame {
     void       *data   = nullptr;
     int         width   = 0;
     int         height  = 0;
+    int         size    = 0;   /* data size in bytes (0 = compute from w*h for raw formats) */
     int64_t     pts     = 0;
     std::function<void()> release; /* re-queue V4L2 buffer on destruction */
 
@@ -25,7 +26,7 @@ struct Frame {
     /* move-only */
     Frame(Frame &&o) noexcept
         : data(o.data), width(o.width), height(o.height),
-          pts(o.pts), release(std::move(o.release)) {
+          size(o.size), pts(o.pts), release(std::move(o.release)) {
         o.data    = nullptr;
         o.release = nullptr;
     }
@@ -36,6 +37,7 @@ struct Frame {
             data    = o.data;
             width   = o.width;
             height  = o.height;
+            size    = o.size;
             pts     = o.pts;
             release = std::move(o.release);
             o.data    = nullptr;

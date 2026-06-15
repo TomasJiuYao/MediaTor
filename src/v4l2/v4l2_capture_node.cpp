@@ -49,6 +49,9 @@ void V4L2CaptureNode::run() {
             frame.data   = cap_.buffer(vbuf.index).start;
             frame.width  = cap_.width();
             frame.height = cap_.height();
+            frame.size   = cap_.mplane() ? planes[0].bytesused : vbuf.bytesused;
+            if (frame.size == 0)
+                frame.size = cap_.width() * cap_.height() * 3 / 2;
             frame.pts    = pts++;
 
             /* Capture index by value for the release callback */
