@@ -53,10 +53,10 @@ int main(int argc, char **argv)
               << "Examples:\n"
               << "  ./v4l2_rkmpp_enc\n"
               << "  ./v4l2_rkmpp_enc /dev/video0 out.h265 500 h265\n"
-              << "  ./v4l2_rkmpp_enc /dev/video64 stream.h264 30000 h264 rtsp://192.168.42.110:8554/live\n"
+              << "  ./v4l2_rkmpp_enc /dev/video21 stream.h264 30000 h264 rtsp://192.168.5.100:8554/live\n"
               << std::endl;
 
-    const char *device     = (argc > 1) ? argv[1] : "/dev/video55";
+    const char *device     = (argc > 1) ? argv[1] : "/dev/video21";
     const char *outfile    = (argc > 2) ? argv[2] : "output.h264";
     int max_frames         = (argc > 3) ? atoi(argv[3]) : 300;
     const char *codec_str  = (argc > 4) ? argv[4] : "h264";

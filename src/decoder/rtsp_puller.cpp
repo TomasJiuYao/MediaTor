@@ -65,12 +65,14 @@ void RTSPPullerNode::run() {
             /* Pass packet with original stream time_base; decoder handles rescaling */
 
             Packet out_pkt(pkt);
+            pkt = nullptr;  // 标记所有权已转移
             if (!output_->push(std::move(out_pkt))) {
                 av_packet_free(&pkt);
                 break; /* queue closed */
             }
         }
-        av_packet_free(&pkt);
+        // av_packet_free(&pkt);
+        if (pkt) av_packet_free(&pkt);  // 只有 pkt 不为空时才释放
     }
 
     printf("[RTSPPuller] done\n");

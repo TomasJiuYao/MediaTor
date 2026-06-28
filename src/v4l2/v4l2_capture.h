@@ -12,9 +12,9 @@ public:
     };
 
     struct Config {
-        const char *device    = "/dev/video55";
-        int         width     = 1920;
-        int         height    = 1080;
+        const char *device    = "/dev/video21";
+        int         width     = 640;
+        int         height    = 320;
         uint32_t    pixfmt    = V4L2_PIX_FMT_NV12;
         int         num_bufs  = 4;
         int         fps       = 30;

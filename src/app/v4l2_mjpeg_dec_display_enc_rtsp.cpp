@@ -196,9 +196,9 @@ int main(int argc, char **argv)
               << "  drm_device  DRM device path           (default: /dev/card0)\n"
               << std::endl;
 
-    const char *device     = (argc > 1) ? argv[1] : "/dev/video64";
-    const char *rtsp_url   = (argc > 2) ? argv[2] : "rtsp://192.168.42.110:8554/live";
-    const char *drm_device = (argc > 3) ? argv[3] : "/dev/card0";
+    const char *device     = (argc > 1) ? argv[1] : "/dev/video21";
+    const char *rtsp_url   = (argc > 2) ? argv[2] : "rtsp://192.168.5.100:8554/live";
+    const char *drm_device = (argc > 3) ? argv[3] : "/dev/dri/card0";
 
     std::cout << "Device: " << device
               << ", RTSP: " << rtsp_url
@@ -218,6 +218,8 @@ int main(int argc, char **argv)
 
         /* Create nodes */
         V4L2CaptureNode::Config cap_cfg;
+        cap_cfg.width  = 1920;
+        cap_cfg.height = 1080;
         cap_cfg.device = device;
         cap_cfg.pixfmt = V4L2_PIX_FMT_MJPEG;
 
@@ -289,8 +291,7 @@ int main(int argc, char **argv)
         cap_node->init();
 
         /* MJPEG decoder only needs codec type and resolution */
-        dec_cfg.width  = cap_node->width();
-        dec_cfg.height = cap_node->height();
+        dec_node->set_resolution(cap_node->width(), cap_node->height());
         dec_node->init();
 
         drm_node->init();

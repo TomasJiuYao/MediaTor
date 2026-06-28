@@ -17,8 +17,8 @@ public:
     struct Config {
         Codec       codec      = H264;
         const char *drm_device = "/dev/dri/card0";
-        int         width      = 0;
-        int         height     = 0;
+        int         width      = 1920;
+        int         height     = 1080;
     };
 
     explicit RKMPPDecoderNode(const Config &cfg) : cfg_(cfg) {}
@@ -33,6 +33,9 @@ public:
 
     /* Set codec params from puller — call before init() */
     void set_codec_params(const AVCodecParameters *params) { codec_params_ = params; }
+
+    /* Set resolution — call before init() */
+    void set_resolution(int w, int h) { cfg_.width = w; cfg_.height = h; }
 
 private:
     Config                          cfg_;

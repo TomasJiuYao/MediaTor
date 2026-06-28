@@ -275,8 +275,8 @@ int main(int argc, char *argv[]) {
 
         if (pid == 0) {
             // Child process: exec v4l2_rkmpp_enc
-            execl("./v4l2_rkmpp_enc", "v4l2_rkmpp_enc",
-                  "/dev/video64", "stream.h264", "30000", "h264",
+            execl("./run_v4l2_rkmpp_enc.sh", "run_v4l2_rkmpp_enc.sh",
+                  "/dev/video21", "stream.h264", "30000", "h264",
                   g_rtsp_url.c_str(), nullptr);
             // If execl returns, it failed
             _exit(1);

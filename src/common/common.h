@@ -56,6 +56,8 @@ struct Packet {
 
     Packet() = default;
 
+    explicit Packet(AVPacket *raw) : pkt(raw) {}
+
     explicit Packet(const AVPacket *p) {
         pkt = av_packet_alloc();
         av_packet_ref(pkt, p);

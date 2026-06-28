@@ -37,14 +37,14 @@ int main(int argc, char **argv)
               << "Usage: rtsp_pull_decode_drm [rtsp_url] [codec] [drm_device]\n"
               << "\n"
               << "Arguments:\n"
-              << "  rtsp_url    RTSP pull URL            (default: rtsp://192.168.42.110:8554/live)\n"
+              << "  rtsp_url    RTSP pull URL            (default: rtsp://192.168.5.100:8554/live)\n"
               << "  codec       h264|h265                (default: h264)\n"
               << "  drm_device  DRM device path           (default: /dev/card0)\n"
               << std::endl;
 
-    const char *rtsp_url   = (argc > 1) ? argv[1] : "rtsp://192.168.42.110:8554/live";
+    const char *rtsp_url   = (argc > 1) ? argv[1] : "rtsp://192.168.5.100:8554/live";
     const char *codec_str  = (argc > 2) ? argv[2] : "h264";
-    const char *drm_device = (argc > 3) ? argv[3] : "/dev/card0";
+    const char *drm_device = (argc > 3) ? argv[3] : "/dev/dri/card0";
 
     RKMPPDecoderNode::Codec codec_type = RKMPPDecoderNode::H264;
     if (strcmp(codec_str, "h265") == 0 || strcmp(codec_str, "hevc") == 0) {

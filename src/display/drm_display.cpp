@@ -388,8 +388,8 @@ void DRMDisplayNode::run() {
         show_frame(sw_frame);
 
         frame_count++;
-        if (frame_count % 30 == 0)
-            printf("[DRMDisplay] %d frames displayed\n", frame_count);
+        // if (frame_count % 30 == 0)
+        //     printf("[DRMDisplay] %d frames displayed\n", frame_count);
 
         av_frame_unref(sw_frame);
     }
