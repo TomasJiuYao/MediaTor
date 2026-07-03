@@ -323,3 +323,42 @@ target_link_libraries(v4l2_mjpeg_dec_display_enc_rtsp PRIVATE
     z
     bz2
 )
+
+# Dual V4L2 capture (MJPEG+NV12) -> RGA blend -> H264 encode -> RTSP stream
+add_executable(dual_v4l2_rga_blend_enc_rtsp
+    dual_v4l2_rga_blend_enc_rtsp.cpp
+)
+
+target_include_directories(dual_v4l2_rga_blend_enc_rtsp PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/common
+    ${CMAKE_SOURCE_DIR}/src/v4l2
+    ${CMAKE_SOURCE_DIR}/src/decoder
+    ${CMAKE_SOURCE_DIR}/src/encoder
+    ${CMAKE_SOURCE_DIR}/src/rtsp
+    ${CMAKE_SOURCE_DIR}/src/rga
+)
+
+target_link_libraries(dual_v4l2_rga_blend_enc_rtsp PRIVATE
+    medtor_v4l2
+    medtor_decoder
+    medtor_encoder
+    medtor_rtsp
+    medtor_rga
+    medtor_common
+    ${FFMPEG_LIB_DIR}/libavformat.a
+    ${FFMPEG_LIB_DIR}/libavdevice.a
+    ${FFMPEG_LIB_DIR}/libavfilter.a
+    ${FFMPEG_LIB_DIR}/libavcodec.a
+    ${FFMPEG_LIB_DIR}/libswscale.a
+    ${FFMPEG_LIB_DIR}/libswresample.a
+    ${FFMPEG_LIB_DIR}/libpostproc.a
+    ${FFMPEG_LIB_DIR}/libavutil.a
+    rockchip_mpp
+    drm
+    rga
+    m
+    pthread
+    dl
+    z
+    bz2
+)
