@@ -228,6 +228,7 @@ int main(int argc, char **argv)
 
         DRMDisplayNode::Config drm_cfg;
         drm_cfg.device = drm_device;
+        //drm_cfg.plane_type = DRM_PLANE_TYPE_PRIMARY;
 
         FFmpegEncoderNode::Config enc_cfg;
         enc_cfg.codec       = FFmpegEncoder::H264;

@@ -10,4 +10,9 @@ target_include_directories(medtor_display PUBLIC
     ${TOOLCHAIN_SYSROOT}/usr/include/libdrm
 )
 
-target_link_libraries(medtor_display PUBLIC medtor_common drm)
+target_link_libraries(medtor_display PUBLIC
+    medtor_common
+    drm
+    ${FFMPEG_LIB_DIR}/libswscale.a
+    ${FFMPEG_LIB_DIR}/libavutil.a
+)

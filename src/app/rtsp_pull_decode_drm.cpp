@@ -71,7 +71,7 @@ int main(int argc, char **argv)
 
         DRMDisplayNode::Config drm_cfg;
         drm_cfg.device     = drm_device;
-        drm_cfg.plane_type = DRM_PLANE_TYPE_PRIMARY;
+        drm_cfg.plane_type = DRM_PLANE_TYPE_OVERLAY;
 
         auto pull_node = std::make_shared<RTSPPullerNode>(pull_cfg);
         auto dec_node  = std::make_shared<RKMPPDecoderNode>(dec_cfg);

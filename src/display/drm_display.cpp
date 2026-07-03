@@ -121,22 +121,19 @@ static drmModePlanePtr drmGetPlaneByType(int fd, int crtc_index, int type)
     return plane;
 }
 
-static int drmCreateBuffer(int fd, int width, int height, int format,
-                            struct drm_vo_buf *buffer)
+static int drmCreateBufferNV12(int fd, int width, int height,
+                                struct drm_vo_buf *buffer)
 {
     struct drm_mode_create_dumb alloc_arg = {};
     struct drm_mode_map_dumb    mmap_arg  = {};
 
     if (fd < 0 || !width || !height) return -EINVAL;
 
-    printf("[DRMDisplay] create buffer w:%d h:%d fmt:0x%x\n", width, height, format);
+    printf("[DRMDisplay] create NV12 buffer w:%d h:%d\n", width, height);
 
-    alloc_arg.bpp   = 8;
-    alloc_arg.width = width;
-    if (format == DRM_FORMAT_NV12)
-        alloc_arg.height = height * 3 / 2;
-    else
-        alloc_arg.height = height * 2;
+    alloc_arg.bpp    = 8;
+    alloc_arg.width  = width;
+    alloc_arg.height = height * 3 / 2;
 
     int ret = drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &alloc_arg);
     if (ret) {
@@ -153,11 +150,11 @@ static int drmCreateBuffer(int fd, int width, int height, int format,
     pitches[1] = pitches[0];
     offsets[1] = pitches[0] * height;
 
-    ret = drmModeAddFB2(fd, width, height, format,
+    ret = drmModeAddFB2(fd, width, height, DRM_FORMAT_NV12,
                          handles, pitches, offsets,
                          (uint32_t *)&buffer->fb_id, 0);
     if (ret) {
-        fprintf(stderr, "[DRMDisplay] AddFB2 failed: %d\n", ret);
+        fprintf(stderr, "[DRMDisplay] AddFB2 NV12 failed: %d\n", ret);
         goto destroy_dumb;
     }
 
@@ -180,7 +177,66 @@ static int drmCreateBuffer(int fd, int width, int height, int format,
     buffer->pitch  = alloc_arg.pitch;
     buffer->size   = alloc_arg.size;
 
-    printf("[DRMDisplay] buffer created, size:%d fb_id:%d\n", buffer->size, buffer->fb_id);
+    printf("[DRMDisplay] NV12 buffer created, size:%d fb_id:%d\n", buffer->size, buffer->fb_id);
+
+destroy_dumb:
+    {
+        struct drm_mode_destroy_dumb destroy_arg = {};
+        destroy_arg.handle = alloc_arg.handle;
+        drmIoctl(fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy_arg);
+    }
+    return ret;
+}
+
+static int drmCreateBufferARGB(int fd, int width, int height,
+                                struct drm_vo_buf *buffer)
+{
+    struct drm_mode_create_dumb alloc_arg = {};
+    struct drm_mode_map_dumb    mmap_arg  = {};
+
+    if (fd < 0 || !width || !height) return -EINVAL;
+
+    printf("[DRMDisplay] create ARGB buffer w:%d h:%d\n", width, height);
+
+    alloc_arg.bpp    = 32;
+    alloc_arg.width  = width;
+    alloc_arg.height = height;
+
+    int ret = drmIoctl(fd, DRM_IOCTL_MODE_CREATE_DUMB, &alloc_arg);
+    if (ret) {
+        fprintf(stderr, "[DRMDisplay] create dumb failed: %s\n", strerror(errno));
+        return ret;
+    }
+
+    buffer->pitch  = alloc_arg.pitch;
+    buffer->size   = alloc_arg.size;
+    buffer->handle = alloc_arg.handle;
+
+    ret = drmModeAddFB(fd, width, height, 24, 32,
+                       alloc_arg.pitch, alloc_arg.handle,
+                       (uint32_t *)&buffer->fb_id);
+    if (ret) {
+        fprintf(stderr, "[DRMDisplay] AddFB ARGB failed: %d\n", ret);
+        goto destroy_dumb;
+    }
+
+    mmap_arg.handle = alloc_arg.handle;
+    ret = drmIoctl(fd, DRM_IOCTL_MODE_MAP_DUMB, &mmap_arg);
+    if (ret) {
+        fprintf(stderr, "[DRMDisplay] map dumb failed: %s\n", strerror(errno));
+        goto destroy_dumb;
+    }
+
+    buffer->map = (char *)mmap(0, alloc_arg.size, PROT_READ | PROT_WRITE,
+                                MAP_SHARED, fd, mmap_arg.offset);
+    if (buffer->map == MAP_FAILED) {
+        fprintf(stderr, "[DRMDisplay] mmap failed: %s\n", strerror(errno));
+        ret = -EINVAL;
+        goto destroy_dumb;
+    }
+
+    printf("[DRMDisplay] ARGB buffer created, size:%d pitch:%d fb_id:%d\n",
+           buffer->size, buffer->pitch, buffer->fb_id);
 
 destroy_dumb:
     {
@@ -231,9 +287,10 @@ bool DRMDisplayNode::setup_drm()
         throw std::runtime_error("[DRMDisplay] no connector found");
     }
 
+    conn_id_ = conn->connector_id;
     screen_w_ = conn->modes[0].hdisplay;
     screen_h_ = conn->modes[0].vdisplay;
-    printf("[DRMDisplay] screen %dx%d\n", screen_w_, screen_h_);
+    printf("[DRMDisplay] screen %dx%d conn_id:%d\n", screen_w_, screen_h_, conn_id_);
 
     int crtc_index = 0;
     crtc_ = drmFoundCrtc(drm_fd_, res, conn, &crtc_index);
@@ -243,13 +300,20 @@ bool DRMDisplayNode::setup_drm()
         throw std::runtime_error("[DRMDisplay] no CRTC found");
     }
 
-    /* Save current CRTC for restoration */
     saved_crtc_ = drmModeGetCrtc(drm_fd_, crtc_->crtc_id);
 
-    /* Find plane by configured type */
+    if (cfg_.plane_type == DRM_PLANE_TYPE_OVERLAY) {
+        primary_plane_ = drmGetPlaneByType(drm_fd_, crtc_index, DRM_PLANE_TYPE_PRIMARY);
+        if (!primary_plane_) {
+            drmModeFreeConnector(conn);
+            drmModeFreeResources(res);
+            throw std::runtime_error("[DRMDisplay] no PRIMARY plane found for overlay mode");
+        }
+        printf("[DRMDisplay] primary plane:%d\n", primary_plane_->plane_id);
+    }
+
     plane_ = drmGetPlaneByType(drm_fd_, crtc_index, cfg_.plane_type);
     if (!plane_) {
-        /* Fallback: try the other type */
         int fallback = (cfg_.plane_type == DRM_PLANE_TYPE_PRIMARY)
                         ? DRM_PLANE_TYPE_OVERLAY : DRM_PLANE_TYPE_PRIMARY;
         plane_ = drmGetPlaneByType(drm_fd_, crtc_index, fallback);
@@ -269,13 +333,188 @@ bool DRMDisplayNode::setup_drm()
 
 bool DRMDisplayNode::alloc_buffers(int width, int height)
 {
+    bool is_overlay = (cfg_.plane_type == DRM_PLANE_TYPE_OVERLAY);
+
     for (int i = 0; i < DRM_BUF_COUNT; i++) {
-        int ret = drmCreateBuffer(drm_fd_, width, height,
-                                   DRM_FORMAT_NV12, &buf_[i]);
+        int ret;
+        if (is_overlay)
+            ret = drmCreateBufferARGB(drm_fd_, width, height, &buf_[i]);
+        else
+            ret = drmCreateBufferNV12(drm_fd_, width, height, &buf_[i]);
         if (ret < 0) return false;
     }
     buf_allocated_ = true;
     return true;
+}
+
+void DRMDisplayNode::modeset_crtc()
+{
+    drmModeObjectProperties *props;
+    uint32_t property_crtc_id, property_active, property_mode_id;
+    uint32_t blob_id;
+
+    props = drmModeObjectGetProperties(drm_fd_, conn_id_, DRM_MODE_OBJECT_CONNECTOR);
+    property_crtc_id = get_property_id(drm_fd_, props, "CRTC_ID");
+    drmModeFreeObjectProperties(props);
+
+    props = drmModeObjectGetProperties(drm_fd_, crtc_->crtc_id, DRM_MODE_OBJECT_CRTC);
+    property_active  = get_property_id(drm_fd_, props, "ACTIVE");
+    property_mode_id = get_property_id(drm_fd_, props, "MODE_ID");
+    drmModeFreeObjectProperties(props);
+
+    drmModeConnectorPtr conn = drmModeGetConnector(drm_fd_, conn_id_);
+    drmModeCreatePropertyBlob(drm_fd_, &conn->modes[0],
+                              sizeof(conn->modes[0]), &blob_id);
+    drmModeFreeConnector(conn);
+
+    drmModeAtomicReq *req = drmModeAtomicAlloc();
+    drmModeAtomicAddProperty(req, crtc_->crtc_id, property_active, 1);
+    drmModeAtomicAddProperty(req, crtc_->crtc_id, property_mode_id, blob_id);
+    drmModeAtomicAddProperty(req, conn_id_, property_crtc_id, crtc_->crtc_id);
+    int ret = drmModeAtomicCommit(drm_fd_, req, DRM_MODE_ATOMIC_ALLOW_MODESET, nullptr);
+    drmModeAtomicFree(req);
+    drmModeDestroyPropertyBlob(drm_fd_, blob_id);
+
+    if (ret)
+        fprintf(stderr, "[DRMDisplay] modeset commit failed: %s\n", strerror(errno));
+    else
+        printf("[DRMDisplay] CRTC modeset done\n");
+
+    modeset_done_ = true;
+}
+
+void DRMDisplayNode::setup_primary_plane()
+{
+    struct drm_mode_create_dumb create = {};
+    struct drm_mode_map_dumb    map    = {};
+
+    create.width  = screen_w_;
+    create.height = screen_h_;
+    create.bpp    = 32;
+    int ret = drmIoctl(drm_fd_, DRM_IOCTL_MODE_CREATE_DUMB, &create);
+    if (ret) {
+        fprintf(stderr, "[DRMDisplay] primary create dumb failed: %s\n", strerror(errno));
+        return;
+    }
+
+    primary_buf_.pitch  = create.pitch;
+    primary_buf_.size   = create.size;
+    primary_buf_.handle = create.handle;
+
+    ret = drmModeAddFB(drm_fd_, screen_w_, screen_h_, 24, 32,
+                       create.pitch, create.handle,
+                       (uint32_t *)&primary_buf_.fb_id);
+    if (ret) {
+        fprintf(stderr, "[DRMDisplay] primary AddFB failed: %d\n", ret);
+        goto destroy_dumb;
+    }
+
+    map.handle = create.handle;
+    ret = drmIoctl(drm_fd_, DRM_IOCTL_MODE_MAP_DUMB, &map);
+    if (ret) {
+        fprintf(stderr, "[DRMDisplay] primary map dumb failed: %s\n", strerror(errno));
+        goto destroy_dumb;
+    }
+
+    primary_buf_.map = (char *)mmap(0, create.size, PROT_READ | PROT_WRITE,
+                                     MAP_SHARED, drm_fd_, map.offset);
+    if (primary_buf_.map == MAP_FAILED) {
+        fprintf(stderr, "[DRMDisplay] primary mmap failed: %s\n", strerror(errno));
+        goto destroy_dumb;
+    }
+
+    {
+        auto abgr_to_argb = [](uint32_t abgr) -> uint32_t {
+            uint32_t a = (abgr >> 24) & 0xFF;
+            uint32_t b = (abgr >> 16) & 0xFF;
+            uint32_t g = (abgr >> 8)  & 0xFF;
+            uint32_t r =  abgr        & 0xFF;
+            return (a << 24) | (r << 16) | (g << 8) | b;
+        };
+
+        uint32_t *px = reinterpret_cast<uint32_t *>(primary_buf_.map);
+        FILE *fp = fopen("./Age4.abgr", "r");
+        if (fp) {
+            fread(px, primary_buf_.size, 1, fp);
+            for (uint32_t i = 0; i < primary_buf_.size / 4; ++i)
+                px[i] = abgr_to_argb(px[i]);
+            fclose(fp);
+        } else {
+            for (uint32_t i = 0; i < primary_buf_.size / 4; ++i)
+                px[i] = 0x000000FF;
+        }
+    }
+
+    {
+        drmModeObjectProperties *props = drmModeObjectGetProperties(
+            drm_fd_, primary_plane_->plane_id, DRM_MODE_OBJECT_PLANE);
+
+        uint32_t prop_crtc_id = get_property_id(drm_fd_, props, "CRTC_ID");
+        uint32_t prop_fb_id   = get_property_id(drm_fd_, props, "FB_ID");
+        uint32_t prop_crtc_x  = get_property_id(drm_fd_, props, "CRTC_X");
+        uint32_t prop_crtc_y  = get_property_id(drm_fd_, props, "CRTC_Y");
+        uint32_t prop_crtc_w  = get_property_id(drm_fd_, props, "CRTC_W");
+        uint32_t prop_crtc_h  = get_property_id(drm_fd_, props, "CRTC_H");
+        uint32_t prop_src_x   = get_property_id(drm_fd_, props, "SRC_X");
+        uint32_t prop_src_y   = get_property_id(drm_fd_, props, "SRC_Y");
+        uint32_t prop_src_w   = get_property_id(drm_fd_, props, "SRC_W");
+        uint32_t prop_src_h   = get_property_id(drm_fd_, props, "SRC_H");
+        drmModeFreeObjectProperties(props);
+
+        drmModeAtomicReq *req = drmModeAtomicAlloc();
+        drmModeAtomicAddProperty(req, primary_plane_->plane_id, prop_crtc_id, crtc_->crtc_id);
+        drmModeAtomicAddProperty(req, primary_plane_->plane_id, prop_fb_id,   primary_buf_.fb_id);
+        drmModeAtomicAddProperty(req, primary_plane_->plane_id, prop_crtc_x,  0);
+        drmModeAtomicAddProperty(req, primary_plane_->plane_id, prop_crtc_y,  0);
+        drmModeAtomicAddProperty(req, primary_plane_->plane_id, prop_crtc_w,  screen_w_);
+        drmModeAtomicAddProperty(req, primary_plane_->plane_id, prop_crtc_h,  screen_h_);
+        drmModeAtomicAddProperty(req, primary_plane_->plane_id, prop_src_x,   0);
+        drmModeAtomicAddProperty(req, primary_plane_->plane_id, prop_src_y,   0);
+        drmModeAtomicAddProperty(req, primary_plane_->plane_id, prop_src_w,   screen_w_ << 16);
+        drmModeAtomicAddProperty(req, primary_plane_->plane_id, prop_src_h,   screen_h_ << 16);
+        ret = drmModeAtomicCommit(drm_fd_, req, 0, nullptr);
+        drmModeAtomicFree(req);
+
+        if (ret)
+            fprintf(stderr, "[DRMDisplay] primary plane commit failed: %s\n", strerror(errno));
+        else
+            printf("[DRMDisplay] primary plane set up (black %dx%d)\n", screen_w_, screen_h_);
+    }
+
+destroy_dumb:
+    {
+        struct drm_mode_destroy_dumb destroy = {};
+        destroy.handle = create.handle;
+        drmIoctl(drm_fd_, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
+    }
+}
+
+void DRMDisplayNode::init_sws(int width, int height)
+{
+    if (sws_ctx_) {
+        sws_freeContext(sws_ctx_);
+        sws_ctx_ = nullptr;
+    }
+    if (bgra_frame_) {
+        av_frame_free(&bgra_frame_);
+        bgra_frame_ = nullptr;
+    }
+
+    sws_ctx_ = sws_getContext(width, height, AV_PIX_FMT_NV12,
+                              width, height, AV_PIX_FMT_BGRA,
+                              SWS_BILINEAR, nullptr, nullptr, nullptr);
+    if (!sws_ctx_) {
+        fprintf(stderr, "[DRMDisplay] sws_getContext failed\n");
+        return;
+    }
+
+    bgra_frame_ = av_frame_alloc();
+    bgra_frame_->format = AV_PIX_FMT_BGRA;
+    bgra_frame_->width  = width;
+    bgra_frame_->height = height;
+    av_frame_get_buffer(bgra_frame_, 0);
+
+    printf("[DRMDisplay] sws NV12->BGRA initialized (%dx%d)\n", width, height);
 }
 
 void DRMDisplayNode::commit_buf(struct drm_vo_buf *b, int src_w, int src_h,
@@ -320,29 +559,52 @@ void DRMDisplayNode::show_frame(AVFrame *sw_frame)
     int w = sw_frame->width;
     int h = sw_frame->height;
 
-    /* Copy NV12 into dumb buffer: Y + UV */
-    char *dst = buf_[buf_idx_].map;
+    if (cfg_.plane_type == DRM_PLANE_TYPE_OVERLAY) {
+        sws_scale(sws_ctx_,
+                  sw_frame->data, sw_frame->linesize,
+                  0, h,
+                  bgra_frame_->data, bgra_frame_->linesize);
 
-    /* Y plane */
-    for (int i = 0; i < h; i++) {
-        memcpy(dst + i * w,
-               sw_frame->data[0] + i * sw_frame->linesize[0], w);
-    }
-    /* UV plane (NV12 interleaved) */
-    for (int i = 0; i < h / 2; i++) {
-        memcpy(dst + w * h + i * w,
-               sw_frame->data[1] + i * sw_frame->linesize[1], w);
-    }
+        char *dst = buf_[buf_idx_].map;
+        int pitch = buf_[buf_idx_].pitch;
 
-    /* Full-screen display */
-    commit_buf(&buf_[buf_idx_], w, h, 0, 0, screen_w_, screen_h_);
+        for (int i = 0; i < h; i++) {
+            memcpy(dst + i * pitch,
+                   bgra_frame_->data[0] + i * bgra_frame_->linesize[0],
+                   w * 4);
+        }
+
+        commit_buf(&buf_[buf_idx_], w, h, 0, 0, screen_w_ / 2, screen_h_ / 2);
+    } else {
+        char *dst = buf_[buf_idx_].map;
+
+        for (int i = 0; i < h; i++) {
+            memcpy(dst + i * w,
+                   sw_frame->data[0] + i * sw_frame->linesize[0], w);
+        }
+        for (int i = 0; i < h / 2; i++) {
+            memcpy(dst + w * h + i * w,
+                   sw_frame->data[1] + i * sw_frame->linesize[1], w);
+        }
+
+        commit_buf(&buf_[buf_idx_], w, h, 0, 0, screen_w_, screen_h_);
+    }
 
     buf_idx_ = (buf_idx_ + 1) % DRM_BUF_COUNT;
 }
 
 void DRMDisplayNode::init() {
     setup_drm();
-    printf("[DRMDisplay] initialized on %s\n", cfg_.device);
+
+    if (cfg_.plane_type == DRM_PLANE_TYPE_OVERLAY) {
+        printf("need set crtc and plane?\n");
+        // modeset_crtc();
+        setup_primary_plane();
+    }
+
+    printf("[DRMDisplay] initialized on %s (plane_type=%s)\n",
+           cfg_.device,
+           cfg_.plane_type == DRM_PLANE_TYPE_OVERLAY ? "OVERLAY" : "PRIMARY");
 }
 
 void DRMDisplayNode::run() {
@@ -354,12 +616,11 @@ void DRMDisplayNode::run() {
     while (running_.load()) {
         DecodedFrame df;
         if (!input_->pop(df))
-            break; /* queue closed */
+            break;
 
         if (!df.frame)
             continue;
 
-        /* Transfer from DRM_PRIME (GPU) to NV12 (CPU) */
         if (df.frame->format == AV_PIX_FMT_DRM_PRIME) {
             sw_frame->format = AV_PIX_FMT_NV12;
             int ret = av_hwframe_transfer_data(sw_frame, df.frame, 0);
@@ -370,17 +631,17 @@ void DRMDisplayNode::run() {
             sw_frame->width  = df.frame->width;
             sw_frame->height = df.frame->height;
         } else {
-            /* Already software format */
             av_frame_unref(sw_frame);
             av_frame_move_ref(sw_frame, df.frame);
         }
 
-        /* Allocate DRM dumb buffers on first frame */
         if (!buf_allocated_) {
             if (!alloc_buffers(sw_frame->width, sw_frame->height)) {
                 fprintf(stderr, "[DRMDisplay] buffer alloc failed\n");
                 break;
             }
+            if (cfg_.plane_type == DRM_PLANE_TYPE_OVERLAY)
+                init_sws(sw_frame->width, sw_frame->height);
             printf("[DRMDisplay] first frame: %dx%d, buffers allocated\n",
                    sw_frame->width, sw_frame->height);
         }
@@ -388,8 +649,6 @@ void DRMDisplayNode::run() {
         show_frame(sw_frame);
 
         frame_count++;
-        // if (frame_count % 30 == 0)
-        //     printf("[DRMDisplay] %d frames displayed\n", frame_count);
 
         av_frame_unref(sw_frame);
     }
@@ -401,7 +660,15 @@ void DRMDisplayNode::run() {
 void DRMDisplayNode::stop() {
     NodeBase::stop();
 
-    /* Restore original CRTC */
+    if (sws_ctx_) {
+        sws_freeContext(sws_ctx_);
+        sws_ctx_ = nullptr;
+    }
+    if (bgra_frame_) {
+        av_frame_free(&bgra_frame_);
+        bgra_frame_ = nullptr;
+    }
+
     if (saved_crtc_ && drm_fd_ >= 0) {
         drmModeConnector *conn = nullptr;
         drmModeRes *res = drmModeGetResources(drm_fd_);
@@ -426,7 +693,12 @@ void DRMDisplayNode::stop() {
         saved_crtc_ = nullptr;
     }
 
-    /* Free dumb buffers */
+    if (primary_buf_.map && primary_buf_.map != MAP_FAILED)
+        munmap(primary_buf_.map, primary_buf_.size);
+    if (primary_buf_.fb_id && drm_fd_ >= 0)
+        drmModeRmFB(drm_fd_, primary_buf_.fb_id);
+    primary_buf_ = {};
+
     for (int i = 0; i < DRM_BUF_COUNT; i++) {
         if (buf_[i].map && buf_[i].map != MAP_FAILED)
             munmap(buf_[i].map, buf_[i].size);
@@ -436,6 +708,7 @@ void DRMDisplayNode::stop() {
     }
     buf_allocated_ = false;
 
+    if (primary_plane_) { drmModeFreePlane(primary_plane_); primary_plane_ = nullptr; }
     if (plane_) { drmModeFreePlane(plane_); plane_ = nullptr; }
     if (crtc_)  { drmModeFreeCrtc(crtc_);  crtc_ = nullptr; }
     if (drm_fd_ >= 0) { close(drm_fd_); drm_fd_ = -1; }
