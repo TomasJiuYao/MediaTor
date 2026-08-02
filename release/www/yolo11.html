@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YOLO11 Object Detection</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f0f2f5; color: #333; }
+
+.header { background: #1a1a2e; color: #fff; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+.header h1 { font-size: 20px; font-weight: 600; }
+.header .status { font-size: 12px; opacity: 0.7; }
+
+.container { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+
+.card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 20px; overflow: hidden; }
+.card-header { padding: 16px 20px; border-bottom: 1px solid #f0f0f0; display: flex; align-items: center; justify-content: space-between; }
+.card-header h2 { font-size: 16px; font-weight: 600; }
+.card-body { padding: 20px; }
+
+.upload-area { border: 2px dashed #d9d9d9; border-radius: 12px; padding: 40px 20px; text-align: center; cursor: pointer; transition: all 0.2s; position: relative; }
+.upload-area:hover, .upload-area.dragover { border-color: #1890ff; background: #f0f7ff; }
+.upload-area p { color: #888; font-size: 14px; margin-bottom: 8px; }
+.upload-area .hint { color: #bbb; font-size: 12px; }
+.upload-area input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+.preview-row { display: flex; gap: 16px; margin-top: 16px; align-items: flex-start; flex-wrap: wrap; }
+.preview-box { flex: 1; min-width: 200px; max-width: 300px; }
+.preview-box img { width: 100%; border-radius: 8px; display: block; background: #f5f5f5; }
+.preview-box .label { font-size: 12px; color: #888; margin-bottom: 6px; }
+
+.btn-group { display: flex; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+.btn { padding: 10px 32px; border: none; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #1890ff; color: #fff; }
+.btn-primary:hover:not(:disabled) { background: #0e7de5; }
+.btn-danger { background: #ff4d4f; color: #fff; }
+.btn-danger:hover:not(:disabled) { background: #e04345; }
+.btn-success { background: #52c41a; color: #fff; }
+.btn-success:hover:not(:disabled) { background: #45b017; }
+
+.result-images { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 700px) { .result-images { grid-template-columns: 1fr; } }
+.image-panel { text-align: center; }
+.image-panel h3 { font-size: 14px; color: #666; margin-bottom: 8px; font-weight: 500; }
+.image-panel img { max-width: 100%; max-height: 500px; border-radius: 8px; background: #f5f5f5; }
+
+.result-stats { display: flex; gap: 24px; margin: 16px 0; padding: 12px 16px; background: #f6f8fa; border-radius: 8px; flex-wrap: wrap; }
+.stat-item { font-size: 14px; }
+.stat-item .label { color: #888; }
+.stat-item .value { font-weight: 600; margin-left: 4px; }
+.stat-item .value.green { color: #52c41a; }
+.stat-item .value.blue { color: #1890ff; }
+
+.result-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+.result-table th { background: #fafafa; padding: 10px 12px; text-align: left; border-bottom: 2px solid #f0f0f0; font-weight: 600; color: #555; }
+.result-table td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; }
+.result-table tr:hover td { background: #f0f7ff; }
+.conf-bar { display: inline-block; height: 8px; border-radius: 4px; background: #52c41a; vertical-align: middle; margin-right: 6px; }
+.conf-bar.medium { background: #faad14; }
+.conf-bar.low { background: #ff4d4f; }
+
+.loading-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.3); z-index: 100; justify-content: center; align-items: center; }
+.loading-overlay.active { display: flex; }
+.spinner { width: 48px; height: 48px; border: 4px solid #fff; border-top-color: #1890ff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.empty-state { text-align: center; padding: 40px 20px; color: #bbb; }
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+.empty-state p { font-size: 14px; }
+
+.error-msg { color: #ff4d4f; font-size: 14px; margin-top: 12px; padding: 10px 16px; background: #fff2f0; border-radius: 6px; display: none; }
+.error-msg.show { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>YOLO11 Object Detection</h1>
+  <span class="status" id="modelStatus">Loading...</span>
+</div>
+
+<div class="container">
+
+  <div class="card">
+    <div class="card-header"><h2>Upload Image</h2></div>
+    <div class="card-body">
+      <div class="upload-area" id="uploadArea">
+        <p>Drag & drop image here, or click to select</p>
+        <span class="hint">Supports JPG / PNG / BMP</span>
+        <input type="file" id="fileInput" accept="image/jpeg,image/png,image/bmp,image/webp">
+      </div>
+      <div class="preview-row" id="previewRow" style="display:none">
+        <div class="preview-box">
+          <div class="label">Selected Image</div>
+          <img id="previewImg" src="" alt="preview">
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" id="detectBtn" onclick="detect()" disabled>Detect</button>
+        <button class="btn btn-danger" id="clearBtn" onclick="clearAll()" disabled>Clear</button>
+      </div>
+      <div class="error-msg" id="errorMsg"></div>
+    </div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none">
+    <div class="card-header"><h2>Detection Results</h2></div>
+    <div class="card-body">
+      <div class="result-images">
+        <div class="image-panel">
+          <h3>Original</h3>
+          <img id="originalImg" src="" alt="original">
+        </div>
+        <div class="image-panel">
+          <h3>Detected</h3>
+          <img id="resultImg" src="" alt="result">
+        </div>
+      </div>
+      <div class="result-stats">
+        <div class="stat-item"><span class="label">Inference:</span><span class="value blue" id="inferTime">-</span></div>
+        <div class="stat-item"><span class="label">Objects:</span><span class="value green" id="objectCount">-</span></div>
+        <div class="stat-item"><span class="label">Image Size:</span><span class="value" id="imgSize">-</span></div>
+      </div>
+      <table class="result-table" id="resultTable">
+        <thead>
+          <tr><th>#</th><th>Class</th><th>Confidence</th><th>Bounding Box</th></tr>
+        </thead>
+        <tbody id="resultBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+</div>
+
+<script>
+let selectedFile = null;
+
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+const previewRow = document.getElementById('previewRow');
+const previewImg = document.getElementById('previewImg');
+const detectBtn = document.getElementById('detectBtn');
+const clearBtn = document.getElementById('clearBtn');
+const errorMsg = document.getElementById('errorMsg');
+const resultCard = document.getElementById('resultCard');
+const loadingOverlay = document.getElementById('loadingOverlay');
+
+uploadArea.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    uploadArea.classList.add('dragover');
+});
+uploadArea.addEventListener('dragleave', function() {
+    uploadArea.classList.remove('dragover');
+});
+uploadArea.addEventListener('drop', function(e) {
+    e.preventDefault();
+    uploadArea.classList.remove('dragover');
+    if (e.dataTransfer.files.length > 0) {
+        handleFile(e.dataTransfer.files[0]);
+    }
+});
+
+fileInput.addEventListener('change', function() {
+    if (fileInput.files.length > 0) {
+        handleFile(fileInput.files[0]);
+    }
+});
+
+function handleFile(file) {
+    if (!file.type.startsWith('image/')) {
+        showError('Please select an image file (JPG/PNG/BMP)');
+        return;
+    }
+    selectedFile = file;
+    const url = URL.createObjectURL(file);
+    previewImg.src = url;
+    previewRow.style.display = 'flex';
+    detectBtn.disabled = false;
+    clearBtn.disabled = false;
+    hideError();
+    resultCard.style.display = 'none';
+}
+
+function clearAll() {
+    selectedFile = null;
+    fileInput.value = '';
+    previewImg.src = '';
+    previewRow.style.display = 'none';
+    detectBtn.disabled = true;
+    clearBtn.disabled = true;
+    resultCard.style.display = 'none';
+    hideError();
+}
+
+function showError(msg) {
+    errorMsg.textContent = msg;
+    errorMsg.classList.add('show');
+}
+function hideError() {
+    errorMsg.classList.remove('show');
+}
+
+function imageFileToJpegBlob(file) {
+    return new Promise(function(resolve, reject) {
+        var img = new Image();
+        img.onload = function() {
+            var canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            var ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+            canvas.toBlob(function(blob) {
+                if (blob) {
+                    resolve(blob);
+                } else {
+                    reject(new Error('Canvas toBlob failed'));
+                }
+            }, 'image/jpeg', 0.95);
+            URL.revokeObjectURL(img.src);
+        };
+        img.onerror = function() {
+            URL.revokeObjectURL(img.src);
+            reject(new Error('Image load failed'));
+        };
+        img.src = URL.createObjectURL(file);
+    });
+}
+
+async function detect() {
+    if (!selectedFile) return;
+
+    detectBtn.disabled = true;
+    clearBtn.disabled = true;
+    loadingOverlay.classList.add('active');
+    hideError();
+
+    try {
+        var jpegBlob = await imageFileToJpegBlob(selectedFile);
+
+        var response = await fetch('/api/detect', {
+            method: 'POST',
+            headers: { 'Content-Type': 'image/jpeg' },
+            body: jpegBlob
+        });
+
+        var data = await response.json();
+
+        if (!data.success) {
+            showError(data.error || 'Detection failed');
+            return;
+        }
+
+        document.getElementById('originalImg').src = previewImg.src;
+        document.getElementById('resultImg').src = data.image;
+        document.getElementById('inferTime').textContent = data.inference_ms.toFixed(2) + ' ms';
+        document.getElementById('objectCount').textContent = data.count;
+        document.getElementById('imgSize').textContent = data.width + ' x ' + data.height;
+
+        var tbody = document.getElementById('resultBody');
+        tbody.innerHTML = '';
+        for (var i = 0; i < data.objects.length; i++) {
+            var obj = data.objects[i];
+            var pct = (obj.conf * 100).toFixed(1);
+            var barClass = obj.conf >= 0.8 ? '' : (obj.conf >= 0.5 ? 'medium' : 'low');
+            var tr = document.createElement('tr');
+            tr.innerHTML = '<td>' + (i + 1) + '</td>' +
+                '<td>' + obj.cls + '</td>' +
+                '<td><span class="conf-bar ' + barClass + '" style="width:' + (obj.conf * 80) + 'px"></span>' + pct + '%</td>' +
+                '<td>(' + obj.left + ', ' + obj.top + ', ' + obj.right + ', ' + obj.bottom + ')</td>';
+            tbody.appendChild(tr);
+        }
+
+        resultCard.style.display = 'block';
+        resultCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    } catch (e) {
+        showError('Request failed: ' + e.message);
+    } finally {
+        loadingOverlay.classList.remove('active');
+        detectBtn.disabled = false;
+        clearBtn.disabled = false;
+    }
+}
+
+function checkModelStatus() {
+    fetch('/api/model/status')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var el = document.getElementById('modelStatus');
+            if (data.loaded) {
+                el.textContent = 'Model Ready (' + data.width + 'x' + data.height + ')';
+                el.style.color = '#52c41a';
+            } else {
+                el.textContent = 'Model Not Loaded';
+                el.style.color = '#ff4d4f';
+            }
+        })
+        .catch(function() {
+            var el = document.getElementById('modelStatus');
+            el.textContent = 'Server Unreachable';
+            el.style.color = '#ff4d4f';
+        });
+}
+
+checkModelStatus();
+setInterval(checkModelStatus, 10000);
+</script>
+</body>
+</html>
