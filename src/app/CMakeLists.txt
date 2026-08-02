@@ -362,3 +362,46 @@ target_link_libraries(dual_v4l2_rga_blend_enc_rtsp PRIVATE
     z
     bz2
 )
+
+# RKNN YOLO11 object detection demo
+add_executable(rknn_yolo11
+    rknn_yolo11.cpp
+)
+
+target_include_directories(rknn_yolo11 PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/rknn
+    ${CMAKE_SOURCE_DIR}/src/include/rknpu
+)
+
+target_link_libraries(rknn_yolo11 PRIVATE
+    medtor_rknn
+    ${CMAKE_SOURCE_DIR}/lib/rknpu/librknnrt.so
+    rga
+    m
+    pthread
+    dl
+)
+
+# YOLO11 HTTP server (web-based object detection)
+add_executable(yolo11_http_server
+    yolo11_http_server.cpp
+)
+
+target_include_directories(yolo11_http_server PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/rknn
+    ${CMAKE_SOURCE_DIR}/src/include
+)
+
+target_link_libraries(yolo11_http_server PRIVATE
+    medtor_rknn
+    ${CMAKE_SOURCE_DIR}/lib/rknpu/librknnrt.so
+    ${CMAKE_SOURCE_DIR}/lib/workflow/libworkflow.a
+    rga
+    ssl
+    crypto
+    m
+    pthread
+    dl
+    z
+    bz2
+)
